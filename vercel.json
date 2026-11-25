@@ -1,0 +1,10 @@
+{
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/login", "destination": "/login.html" },
+    { "source": "/tienda", "destination": "/store.html" }
+  ],
+  "functions": {
+    "api/[...all].js": { "maxDuration": 15 }
+  }
+}

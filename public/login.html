@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Entrar · Operación de tiendas</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="login">
+    <div class="brand" style="justify-content:center;margin-bottom:22px">
+      <div class="brand-mark">☕</div>
+      <div><h1>Operación de tiendas</h1><p>Entra con tu usuario y PIN</p></div>
+    </div>
+    <form class="card login-card" id="login-form" novalidate>
+      <label class="field">
+        <span>Usuario</span>
+        <input class="input" name="username" autocomplete="username" autocapitalize="none" required>
+      </label>
+      <label class="field">
+        <span>PIN</span>
+        <input class="input" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" required>
+      </label>
+      <p class="error-inline" id="login-error" hidden></p>
+      <button class="btn" type="submit" style="width:100%">Entrar</button>
+    </form>
+  </main>
+  <script src="/app.js"></script>
+  <script src="/login.js"></script>
+</body>
+</html>

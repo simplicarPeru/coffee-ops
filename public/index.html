@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Panel · Operación de tiendas</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">☕</div>
+        <div>
+          <h1>Operación de tiendas</h1>
+          <p id="subtitle">Cargando…</p>
+        </div>
+      </div>
+      <div class="controls">
+        <nav class="nav" id="nav" aria-label="Secciones"></nav>
+        <span class="who" id="who"></span>
+        <button class="btn ghost small" id="logout">Salir</button>
+      </div>
+    </header>
+
+    <div id="error" class="error-banner" hidden></div>
+
+    <!-- Hoy -->
+    <section id="view-hoy" hidden>
+      <div class="toolbar">
+        <h2>Hoy en las tiendas</h2>
+        <div class="controls">
+          <input class="input" type="date" id="date" aria-label="Fecha">
+          <button class="btn ghost small" id="today">Hoy</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid" id="kpis"></div>
+
+      <section class="card board" aria-label="Estado por tienda">
+        <div class="board-head">
+          <div>Tienda</div>
+          <div>Apertura</div>
+          <div>Mediodía</div>
+          <div>Cierre</div>
+        </div>
+        <div id="rows"></div>
+      </section>
+    </section>
+
+    <!-- Reportes -->
+    <section id="view-reportes" hidden>
+      <div class="toolbar">
+        <h2>Reporte de aperturas</h2>
+        <div class="controls">
+          <input class="input" type="month" id="month" aria-label="Mes">
+          <button class="btn" id="export">Exportar CSV</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="table-wrap">
+          <table class="data" id="per-store"></table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table class="data" id="rows-report"></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tiendas (admin) -->
+    <section id="view-tiendas" hidden>
+      <div class="toolbar">
+        <h2>Tiendas</h2>
+        <button class="btn" id="new-store">Nueva tienda</button>
+      </div>
+      <div class="stack" id="store-list"></div>
+    </section>
+
+    <!-- Usuarios (admin) -->
+    <section id="view-usuarios" hidden>
+      <div class="toolbar">
+        <h2>Usuarios</h2>
+        <button class="btn" id="new-user">Nuevo usuario</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table class="data" id="users-table"></table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="drawer-backdrop" id="backdrop"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <div>
+        <h2 id="drawer-title"></h2>
+        <p class="muted small" id="drawer-sub"></p>
+      </div>
+      <button class="btn ghost small" id="drawer-close">Cerrar</button>
+    </div>
+    <div id="drawer-body"></div>
+  </aside>
+
+  <script src="/app.js"></script>
+  <script src="/manager.js"></script>
+</body>
+</html>
