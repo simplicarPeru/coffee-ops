@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Comercial · Operación de tiendas</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">☕</div>
+        <div>
+          <h1>Comercial</h1>
+          <p id="subtitle">Cargando…</p>
+        </div>
+      </div>
+      <div class="controls">
+        <nav class="nav" id="nav" aria-label="Secciones">
+          <button data-tab="resumen" class="active">Resumen</button>
+          <button data-tab="crm">CRM</button>
+          <button data-tab="pedidos">Pedidos B2B</button>
+        </nav>
+        <a class="btn ghost small" id="back-panel" href="/" hidden>Panel de tiendas</a>
+        <span class="who" id="who"></span>
+        <button class="btn ghost small" id="logout">Salir</button>
+      </div>
+    </header>
+
+    <div id="error" class="error-banner" hidden></div>
+
+    <!-- Resumen -->
+    <section id="tab-resumen">
+      <div class="kpi-grid" id="kpis"></div>
+
+      <div class="grid-2">
+        <section class="card row-card">
+          <header><h3>Embudo de ventas</h3><span class="small muted" id="pipeline-note"></span></header>
+          <div id="stages"></div>
+        </section>
+        <section class="card row-card">
+          <header><h3>Seguimientos</h3></header>
+          <div id="followups"></div>
+        </section>
+      </div>
+
+      <div class="grid-2">
+        <section class="card row-card">
+          <header><h3>Entregas de hoy</h3></header>
+          <div id="today-orders"></div>
+        </section>
+        <section class="card row-card">
+          <header><h3>Pedidos atrasados</h3></header>
+          <div id="late-orders"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- CRM -->
+    <section id="tab-crm" hidden>
+      <div class="toolbar">
+        <div class="controls">
+          <button class="btn ghost small" data-sub="opps">Oportunidades</button>
+          <button class="btn ghost small" data-sub="contacts">Contactos</button>
+        </div>
+        <div class="controls">
+          <select class="select" id="stage-filter" aria-label="Filtrar por etapa" hidden></select>
+          <input class="input" id="contact-search" placeholder="Buscar contacto" hidden>
+          <button class="btn" id="new-crm">Nuevo</button>
+        </div>
+      </div>
+      <div class="card"><div class="table-wrap"><table class="data" id="crm-table"></table></div></div>
+    </section>
+
+    <!-- Pedidos B2B -->
+    <section id="tab-pedidos" hidden>
+      <div class="toolbar">
+        <h2>Pedidos B2B</h2>
+        <button class="btn" id="new-order">Nuevo pedido</button>
+      </div>
+      <div class="card"><div class="table-wrap"><table class="data" id="orders-table"></table></div></div>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+  <script src="/comercial.js"></script>
+</body>
+</html>

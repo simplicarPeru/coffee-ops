@@ -2,7 +2,8 @@
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/login", "destination": "/login.html" },
-    { "source": "/tienda", "destination": "/store.html" }
+    { "source": "/tienda", "destination": "/store.html" },
+    { "source": "/comercial", "destination": "/comercial.html" }
   ],
   "functions": {
     "api/[...all].js": { "maxDuration": 15 }

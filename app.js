@@ -11,6 +11,11 @@ import {
   insertEvents, listStoreEvents,
 } from './lib/db.js';
 import { uploadPhoto, removePhoto, signUrls, LOCAL_UPLOADS_DIR, storageMode } from './lib/storage.js';
+import {
+  listContacts, insertContact, updateContact,
+  listOpportunities, insertOpportunity, updateOpportunity, getOpportunity,
+  listOrders, getOrder, insertOrder, updateOrder,
+} from './lib/comercial.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
@@ -23,8 +28,8 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const PIN_RE = /^\d{4,6}$/;
 const USERNAME_RE = /^[a-z0-9._-]{3,30}$/i;
 // admin: administración del sistema. administrativo: rol que aprueba aperturas (cualquier persona con ese rol).
-const ROLES = ['admin', 'administrativo', 'leader', 'barista'];
-const ROLE_LABEL = { admin: 'Administrador', administrativo: 'Administrativo', leader: 'Líder', barista: 'Barista' };
+const ROLES = ['admin', 'administrativo', 'comercial', 'leader', 'barista'];
+const ROLE_LABEL = { admin: 'Administrador', administrativo: 'Administrativo', comercial: 'Comercial', leader: 'Líder', barista: 'Barista' };
 const ALLOWED_MIME = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
@@ -429,6 +434,7 @@ app.use(wrap(async (req, res, next) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 app.get('/tienda', (req, res) => res.sendFile(path.join(__dirname, 'public', 'store.html')));
+app.get('/comercial', (req, res) => res.sendFile(path.join(__dirname, 'public', 'comercial.html')));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 if (storageMode === 'local') app.use('/uploads', express.static(LOCAL_UPLOADS_DIR));
 
@@ -881,6 +887,278 @@ app.get('/api/reports/openings', auth, requireRoles('admin', 'administrativo'), 
 // Historial de eventos de una tienda (auditoría)
 app.get('/api/stores/:id/events', auth, requireRoles('admin', 'administrativo'), wrap(async (req, res) => {
   res.json({ events: await listStoreEvents(req.params.id) });
+}));
+
+// ---------- Comercial (CRM, pedidos B2B y resumen) ----------
+const COMERCIAL = requireRoles('admin', 'administrativo', 'comercial');
+const STAGES = ['lead', 'contactado', 'propuesta', 'negociacion', 'ganado', 'perdido'];
+const OPEN_STAGES = ['lead', 'contactado', 'propuesta', 'negociacion'];
+const ORDER_STATUSES = ['pendiente', 'preparando', 'en_ruta', 'entregado', 'cancelado'];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const optDate = (v) => (v ? (DATE_RE.test(String(v)) ? String(v) : 'bad') : null);
+const sum = (list, fn) => list.reduce((n, x) => n + fn(x), 0);
+
+// Acepta líneas como "2 x Café de especialidad 1kg @ 65" y calcula el total en el servidor
+function parseOrderItems(raw) {
+  const lines = Array.isArray(raw) ? raw : String(raw || '').split('\n');
+  const items = [];
+  for (const line of lines) {
+    if (typeof line === 'object' && line) {
+      const qty = Number(line.qty);
+      const unitPrice = Number(line.unitPrice ?? line.unit_price);
+      const product = cleanText(line.product, 120);
+      if (!product || !Number.isInteger(qty) || qty < 1 || !Number.isFinite(unitPrice) || unitPrice < 0) return { error: 'Revisa los productos del pedido' };
+      items.push({ product, qty, unitPrice });
+      continue;
+    }
+    const text = String(line).trim();
+    if (!text) continue;
+    const m = text.match(/^(\d+)\s*x\s*(.+?)\s*@\s*(\d+(?:[.,]\d+)?)$/i);
+    if (!m) return { error: `Línea no válida: "${text}". Usa el formato: 2 x Producto @ 65` };
+    items.push({ product: cleanText(m[2], 120), qty: Number(m[1]), unitPrice: Number(m[3].replace(',', '.')) });
+  }
+  if (!items.length) return { error: 'El pedido necesita al menos un producto' };
+  const total = Math.round(sum(items, (i) => i.qty * i.unitPrice) * 100) / 100;
+  return { items, total };
+}
+
+app.get('/api/comercial/summary', auth, COMERCIAL, wrap(async (req, res) => {
+  const { today } = lima();
+  const month = today.slice(0, 7);
+  const [opps, orders, contacts] = await Promise.all([listOpportunities(), listOrders(), listContacts()]);
+  const contactName = new Map(contacts.map((c) => [c.id, c.name]));
+  const oppView = (o) => ({ id: o.id, title: o.title, contact: contactName.get(o.contactId) || '', stage: o.stage, nextAction: o.nextAction, nextActionDate: o.nextActionDate, estimatedValue: o.estimatedValue, probability: o.probability });
+
+  const open = opps.filter((o) => OPEN_STAGES.includes(o.stage));
+  const weighted = (list) => sum(list, (o) => (o.estimatedValue * o.probability) / 100);
+  const closeThisMonth = open.filter((o) => o.expectedClose && o.expectedClose.startsWith(month));
+  const won = opps.filter((o) => o.stage === 'ganado' && o.updatedAt.slice(0, 7) === month);
+
+  const openOrders = orders.filter((o) => !['entregado', 'cancelado'].includes(o.status));
+  const delivered = orders.filter((o) => o.status === 'entregado' && (o.deliveredAt || '').slice(0, 7) === month);
+  const byStatus = Object.fromEntries(ORDER_STATUSES.map((s) => [s, orders.filter((o) => o.status === s).length]));
+
+  res.json(await attachPhotoUrls({
+    today,
+    month,
+    pipeline: {
+      openCount: open.length,
+      openValue: sum(open, (o) => o.estimatedValue),
+      weightedValue: weighted(open),
+      closeThisMonth: { count: closeThisMonth.length, value: sum(closeThisMonth, (o) => o.estimatedValue), weighted: weighted(closeThisMonth) },
+      wonThisMonth: { count: won.length, value: sum(won, (o) => o.estimatedValue) },
+      lostCount: opps.filter((o) => o.stage === 'perdido').length,
+    },
+    byStage: STAGES.map((stage) => {
+      const list = opps.filter((o) => o.stage === stage);
+      return { stage, count: list.length, value: sum(list, (o) => o.estimatedValue) };
+    }),
+    crm: {
+      contacts: contacts.length,
+      newContactsThisMonth: contacts.filter((c) => c.createdAt.slice(0, 7) === month).length,
+      overdue: open.filter((o) => o.nextActionDate && o.nextActionDate < today).map(oppView),
+      dueToday: open.filter((o) => o.nextActionDate === today).map(oppView),
+    },
+    orders: {
+      openCount: openOrders.length,
+      byStatus,
+      today: orders.filter((o) => o.deliveryDate === today && o.status !== 'cancelado'),
+      late: openOrders.filter((o) => o.deliveryDate && o.deliveryDate < today),
+      deliveredThisMonth: { count: delivered.length, value: sum(delivered, (o) => o.total) },
+    },
+  }));
+}));
+
+// CRM: contactos
+app.get('/api/comercial/contacts', auth, COMERCIAL, wrap(async (req, res) => {
+  res.json({ contacts: await listContacts() });
+}));
+
+function contactFields(b, existing = {}) {
+  const name = b.name !== undefined ? cleanText(b.name, 80) : existing.name;
+  if (!name || name.length < 2) return { error: 'El nombre del contacto es obligatorio' };
+  const email = b.email !== undefined ? cleanText(b.email, 120) : existing.email || '';
+  if (email && !EMAIL_RE.test(email)) return { error: 'Correo no válido' };
+  const tags = b.tags !== undefined
+    ? (Array.isArray(b.tags) ? b.tags : String(b.tags).split(',')).map((t) => cleanText(t, 30)).filter(Boolean).slice(0, 10)
+    : existing.tags || [];
+  return {
+    data: {
+      name,
+      company: b.company !== undefined ? cleanText(b.company, 120) : existing.company || '',
+      roleTitle: b.roleTitle !== undefined ? cleanText(b.roleTitle, 80) : existing.roleTitle || '',
+      phone: b.phone !== undefined ? cleanText(b.phone, 30) : existing.phone || '',
+      email,
+      source: b.source !== undefined ? cleanText(b.source, 40) : existing.source || '',
+      tags,
+      notes: b.notes !== undefined ? cleanText(b.notes, 2000) : existing.notes || '',
+    },
+  };
+}
+
+app.post('/api/comercial/contacts', auth, COMERCIAL, wrap(async (req, res) => {
+  const v = contactFields(req.body);
+  if (v.error) return res.status(400).json({ error: v.error });
+  const contact = { id: uid(), ...v.data, createdBy: req.user.id };
+  await insertContact(contact);
+  await insertEvents([{ type: 'comercial.contact.created', userId: req.user.id, userName: req.user.name, detail: { id: contact.id, name: contact.name } }]);
+  res.status(201).json({ ok: true, id: contact.id });
+}));
+
+app.patch('/api/comercial/contacts/:id', auth, COMERCIAL, wrap(async (req, res) => {
+  const current = (await listContacts()).find((c) => c.id === req.params.id);
+  if (!current) return res.status(404).json({ error: 'Contacto no encontrado' });
+  const v = contactFields(req.body, current);
+  if (v.error) return res.status(400).json({ error: v.error });
+  await updateContact(current.id, v.data);
+  await insertEvents([{ type: 'comercial.contact.updated', userId: req.user.id, userName: req.user.name, detail: { id: current.id } }]);
+  res.json({ ok: true });
+}));
+
+// CRM: oportunidades (eventos y ventas)
+app.get('/api/comercial/opportunities', auth, COMERCIAL, wrap(async (req, res) => {
+  res.json({ opportunities: await listOpportunities() });
+}));
+
+function oppFields(b, existing = {}) {
+  const title = b.title !== undefined ? cleanText(b.title, 120) : existing.title;
+  if (!title || title.length < 2) return { error: 'El título de la oportunidad es obligatorio' };
+  const stage = b.stage !== undefined ? b.stage : existing.stage || 'lead';
+  if (!STAGES.includes(stage)) return { error: 'Etapa no válida' };
+  const estimatedValue = b.estimatedValue !== undefined ? Number(b.estimatedValue) : existing.estimatedValue ?? 0;
+  if (!Number.isFinite(estimatedValue) || estimatedValue < 0) return { error: 'El valor estimado no es válido' };
+  const probability = b.probability !== undefined ? Number(b.probability) : existing.probability ?? 20;
+  if (!Number.isInteger(probability) || probability < 0 || probability > 100) return { error: 'La probabilidad debe estar entre 0 y 100' };
+  const dates = {};
+  for (const k of ['eventDate', 'expectedClose', 'nextActionDate']) {
+    const value = b[k] !== undefined ? optDate(b[k]) : existing[k] ?? null;
+    if (value === 'bad') return { error: 'Las fechas deben tener formato AAAA-MM-DD' };
+    dates[k] = value;
+  }
+  return {
+    data: {
+      title,
+      contactId: b.contactId !== undefined ? b.contactId || null : existing.contactId || null,
+      eventName: b.eventName !== undefined ? cleanText(b.eventName, 120) : existing.eventName || '',
+      eventDate: dates.eventDate,
+      stage,
+      estimatedValue,
+      probability,
+      expectedClose: dates.expectedClose,
+      nextAction: b.nextAction !== undefined ? cleanText(b.nextAction, 200) : existing.nextAction || '',
+      nextActionDate: dates.nextActionDate,
+      notes: b.notes !== undefined ? cleanText(b.notes, 2000) : existing.notes || '',
+    },
+  };
+}
+
+app.post('/api/comercial/opportunities', auth, COMERCIAL, wrap(async (req, res) => {
+  const v = oppFields(req.body);
+  if (v.error) return res.status(400).json({ error: v.error });
+  const opp = { id: uid(), ...v.data, ownerId: req.user.id };
+  await insertOpportunity(opp);
+  await insertEvents([{ type: 'comercial.opportunity.created', userId: req.user.id, userName: req.user.name, detail: { id: opp.id, title: opp.title, stage: opp.stage } }]);
+  res.status(201).json({ ok: true, id: opp.id });
+}));
+
+app.patch('/api/comercial/opportunities/:id', auth, COMERCIAL, wrap(async (req, res) => {
+  const current = await getOpportunity(req.params.id);
+  if (!current) return res.status(404).json({ error: 'Oportunidad no encontrada' });
+  const v = oppFields(req.body, current);
+  if (v.error) return res.status(400).json({ error: v.error });
+  await updateOpportunity(current.id, v.data);
+  const stageChanged = v.data.stage !== current.stage;
+  await insertEvents([{
+    type: stageChanged ? 'comercial.opportunity.stage' : 'comercial.opportunity.updated',
+    userId: req.user.id,
+    userName: req.user.name,
+    detail: { id: current.id, from: current.stage, to: v.data.stage },
+  }]);
+  res.json({ ok: true });
+}));
+
+// Pedidos B2B
+app.get('/api/comercial/orders', auth, COMERCIAL, wrap(async (req, res) => {
+  res.json(await attachPhotoUrls({ orders: await listOrders() }));
+}));
+
+function orderFields(b, existing = {}) {
+  const customer = b.customer !== undefined ? cleanText(b.customer, 120) : existing.customer;
+  if (!customer || customer.length < 2) return { error: 'El cliente es obligatorio' };
+  let items = existing.items;
+  let total = existing.total;
+  if (b.items !== undefined) {
+    const parsed = parseOrderItems(b.items);
+    if (parsed.error) return { error: parsed.error };
+    items = parsed.items;
+    total = parsed.total;
+  }
+  const deliveryDate = b.deliveryDate !== undefined ? optDate(b.deliveryDate) : existing.deliveryDate ?? null;
+  if (deliveryDate === 'bad') return { error: 'La fecha de entrega debe tener formato AAAA-MM-DD' };
+  const status = b.status !== undefined ? b.status : existing.status || 'pendiente';
+  if (!ORDER_STATUSES.includes(status)) return { error: 'Estado de pedido no válido' };
+  return {
+    data: {
+      customer,
+      contactName: b.contactName !== undefined ? cleanText(b.contactName, 120) : existing.contactName || '',
+      phone: b.phone !== undefined ? cleanText(b.phone, 30) : existing.phone || '',
+      address: b.address !== undefined ? cleanText(b.address, 300) : existing.address || '',
+      items,
+      total,
+      status,
+      deliveryDate,
+      deliveryWindow: b.deliveryWindow !== undefined ? cleanText(b.deliveryWindow, 40) : existing.deliveryWindow || '',
+      assignedTo: b.assignedTo !== undefined ? cleanText(b.assignedTo, 120) : existing.assignedTo || '',
+      notes: b.notes !== undefined ? cleanText(b.notes, 2000) : existing.notes || '',
+    },
+  };
+}
+
+app.post('/api/comercial/orders', auth, COMERCIAL, wrap(async (req, res) => {
+  const v = orderFields({ ...req.body, status: 'pendiente' });
+  if (v.error) return res.status(400).json({ error: v.error });
+  const order = { id: uid(), ...v.data, createdBy: req.user.id };
+  await insertOrder(order);
+  await insertEvents([{ type: 'comercial.order.created', userId: req.user.id, userName: req.user.name, detail: { id: order.id, customer: order.customer, total: order.total } }]);
+  res.status(201).json({ ok: true, id: order.id });
+}));
+
+app.patch('/api/comercial/orders/:id', auth, COMERCIAL, wrap(async (req, res) => {
+  const current = await getOrder(req.params.id);
+  if (!current) return res.status(404).json({ error: 'Pedido no encontrado' });
+  const v = orderFields(req.body, current);
+  if (v.error) return res.status(400).json({ error: v.error });
+
+  const patch = { ...v.data };
+  if (req.body.items !== undefined) patch.total = v.data.total;
+  if (v.data.status !== current.status) {
+    patch.deliveredAt = v.data.status === 'entregado' ? new Date().toISOString() : null;
+  }
+  await updateOrder(current.id, patch);
+  if (v.data.status !== current.status) {
+    await insertEvents([{
+      type: 'comercial.order.status',
+      userId: req.user.id,
+      userName: req.user.name,
+      detail: { id: current.id, customer: current.customer, from: current.status, to: v.data.status },
+    }]);
+  }
+  res.json({ ok: true });
+}));
+
+// Foto de entrega (la toma el repartidor desde el celular)
+app.post('/api/comercial/orders/:id/proof', auth, COMERCIAL, upload.single('photo'), wrap(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Formato de imagen no válido' });
+  const order = await getOrder(req.params.id);
+  if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
+
+  const id = uid();
+  const relPath = `comercial/pedidos/${order.id}/${id}${ALLOWED_MIME[req.file.mimetype]}`;
+  await uploadPhoto(relPath, req.file.buffer, req.file.mimetype);
+  await updateOrder(order.id, { proof: { file: relPath, at: new Date().toISOString(), by: req.user.name } });
+  await insertEvents([{ type: 'comercial.order.proof', userId: req.user.id, userName: req.user.name, detail: { id: order.id, customer: order.customer } }]);
+  res.status(201).json({ ok: true });
 }));
 
 // ---------- Errores ----------

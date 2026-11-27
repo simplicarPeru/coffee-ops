@@ -3,7 +3,7 @@
   const { api, esc, toast, modal } = App;
 
   const MOMENT_KEYS = ['opening', 'midday', 'closing'];
-  const ROLE_LABEL = { admin: 'Administrador', administrativo: 'Administrativo', leader: 'Líder', barista: 'Barista' };
+  const ROLE_LABEL = { admin: 'Administrador', administrativo: 'Administrativo', comercial: 'Comercial', leader: 'Líder', barista: 'Barista' };
   const STATE_LABEL = { complete: 'Completo', in_progress: 'En curso', late: 'Atrasado', incomplete: 'Incompleto', pending: 'Pendiente' };
 
   let me = null;
@@ -36,11 +36,12 @@
   }
 
   function buildNav() {
-    const items = [['hoy', 'Hoy'], ['reportes', 'Reportes']];
+    const items = [['hoy', 'Hoy'], ['reportes', 'Reportes'], ['comercial', 'Comercial']];
     if (isAdmin()) items.push(['tiendas', 'Tiendas'], ['usuarios', 'Usuarios']);
     $('#nav').innerHTML = items.map(([v, l]) => `<button data-view="${v}">${l}</button>`).join('');
     $('#nav').addEventListener('click', (e) => {
       const b = e.target.closest('[data-view]');
+      if (b && b.dataset.view === 'comercial') return (location.href = '/comercial');
       if (b) {
         const url = new URL(location.href);
         url.searchParams.set('view', b.dataset.view);
@@ -463,6 +464,7 @@
       return;
     }
     if (me.role === 'leader' || me.role === 'barista') return (location.href = '/tienda');
+    if (me.role === 'comercial') return (location.href = '/comercial');
 
     config = await api('GET', '/api/config');
     statusLabel = config.statusLabel;

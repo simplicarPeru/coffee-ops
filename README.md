@@ -102,3 +102,13 @@ Notas:
 1. **Límite de intentos al entrar.** El PIN hoy no tiene bloqueo tras varios intentos fallidos.
 2. **Pausa de Supabase gratis:** el plan gratuito se pausa tras una semana sin actividad. Si la app se usa a diario no pasa, pero conviene saberlo.
 3. **Presencia:** la entrada y salida la marca cada persona. Es un registro, no control de asistencia.
+
+## Comercial (`/comercial`)
+
+Visible para los roles **administrador**, **administrativo** y **comercial** (el rol nuevo para el equipo de ventas).
+
+- **Resumen:** pipeline abierto y ponderado por probabilidad, cierre esperado del mes, ganado del mes, seguimientos vencidos y de hoy, entregas de hoy y pedidos atrasados.
+- **CRM:** oportunidades por etapa (lead, contactado, propuesta, negociación, ganado, perdido), con evento, valor, probabilidad y próxima acción con fecha. Contactos con empresa, cargo, teléfono, correo, origen y etiquetas.
+- **Pedidos B2B:** cliente, dirección, ventana de entrega y productos. Se escriben como `2 x Café de especialidad 1kg @ 65`, y el total se calcula en el servidor. Estados: pendiente, preparando, en ruta, entregado, cancelado. La foto de entrega queda como prueba y aparece en el resumen si falta.
+
+Montos en soles (S/). Los cambios de etapa, estado y foto quedan registrados en `events`.
